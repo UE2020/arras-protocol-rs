@@ -1,4 +1,4 @@
 # arras-protocol-rs
-Arras protocol in Rust
+Arras.io protocol in Rust
 
 Mostly incomplete atm.

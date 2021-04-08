@@ -115,24 +115,18 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
                 }
             }
         } else if block.is_string() {
-            let mut hasUnicode = false;
             let dec = block.as_string();
-            for i in 0..dec.len() {
-                if dec.chars().nth(i).unwrap() > '\u{ff}' {
-                    hasUnicode = true;
-                } else if dec.chars().nth(i).unwrap() == '\x00' {
-                    panic!("String contains null");
-                }
-            }
-            if !hasUnicode && dec.len() <= 1 {
+            let mut hasUnicode = !dec.chars().all(|c| char::is_ascii(&c));
+            println!("hasUnicode {}", hasUnicode);
+            if !hasUnicode && dec.chars().collect::<Vec<_>>().len() <= 1 {
                 typeCode = 0b1001;
                 contentSize += 1;
             } else if hasUnicode {
                 typeCode = 0b1011;
-                contentSize += dec.len() * 2 + 2;
+                contentSize += dec.chars().collect::<Vec<_>>().len() * 4;
             } else {
                 typeCode = 0b1010;
-                contentSize += dec.len() + 1;
+                contentSize += dec.chars().collect::<Vec<_>>().len() + 1;
             }
         } else {
             panic!("Memory corruption");
@@ -186,6 +180,11 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
         headerCodes.push(0b1111);
     }
     let mut output = Vec::with_capacity((headerCodes.len() >> 1) + contentSize);
+    println!("Output {}", (headerCodes.len() >> 1) + contentSize);
+    println!("Content size {}", contentSize);
+    println!("Header codes {}", headerCodes.len());
+    println!("opcode {}", headerCodes.len() >> 1);
+
     output.resize((headerCodes.len() >> 1) + contentSize, 0);
     // loop
     let mut i = 0;
@@ -248,7 +247,7 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
                 }
                 0b1001 => {
                     let block = block.as_string();
-                    let byte = if block.len() == 0 {
+                    let byte = if block.chars().collect::<Vec<_>>().len() == 0 {
                         0
                     } else {
                         block.chars().nth(i).unwrap() as u32
@@ -272,13 +271,16 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
                 }
                 0b1011 => {
                     let block = block.as_string();
-                    for chara in block.chars() {
-                        let charCode = chara as u32;
+                    for chara in block.encode_utf16() {
+                        let charCode = chara;
+                        println!("{}", charCode);
                         let idx = index;
                         index += 1;
+                        println!("{}", (charCode & 0xff));
                         output[idx] = (charCode & 0xff) as u8;
 
                         let idx = index;
+                        println!("{}", (charCode >> 8));
                         index += 1;
                         output[idx] = (charCode >> 8) as u8;
                     }
@@ -316,4 +318,17 @@ fn main() {
     }
     let duration = start.elapsed();
     println!("arras_protocol: 1000 cycles took {:?}", duration);
+
+    // some tests
+    let payload = vec![
+        Block::Bool(true),
+        Block::Bool(true),
+        Block::Bool(true),
+        Block::Bool(true),
+        Block::String("𝓱𝓪𝓱𝓪 𝓮𝔃𝔃".to_owned()),
+        Block::Number(0.4),
+        Block::Number(3.14),
+        Block::Number(1.8),
+    ];
+    println!("arras_protocol-test1: {:?}", encode(payload));
 }

@@ -175,7 +175,7 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
         } else if repeatTypeCount == 2 {
             headerCodes.push(0b1100);
         } else if repeatTypeCount == 3 {
-            headerCodes.push(0b1110);
+            headerCodes.push(0b1101);
         } else if repeatTypeCount < 20 {
             headerCodes.push(0b1110);
             headerCodes.push(repeatTypeCount - 4);
@@ -298,5 +298,5 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
     output
 }
 fn main() {
-    println!("Hello, world! {:?}", encode(vec![Block::String("Hello".to_owned())]));
+    println!("Hello, world! {:?}", encode(vec![Block::Bool(true), Block::Bool(true), Block::Bool(true), Block::Bool(true)]));
 }

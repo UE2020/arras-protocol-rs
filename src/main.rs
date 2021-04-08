@@ -7,7 +7,7 @@ enum FasttalkType {
 
 impl FasttalkType {
     fn compare(blocka: &Self, blockb: &Self) -> bool {
-        if std::mem::discriminant(&blocka) != std::mem::discriminant(&blockb) {
+        if std::mem::discriminant(blocka) != std::mem::discriminant(blockb) {
             false
         } else {
             match blocka {
@@ -225,22 +225,78 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
                     break;
                 }
                 0b0110 | 0b0111 => {
-                    u_16 = unsafe { std::mem::transmute::<u16, [u8; 2]>(block.as_number() as u16) };
+                    u_32 = unsafe { std::mem::transmute::<u32, [u8; 4]>(block.as_number() as u32) };
                     let mut j = 0;
                     let offset = index;
-                    for value in &unsafe { *c_16 } {
+                    for value in &unsafe { *c_32 } {
                         output[j + offset] = *value;
                         j += 1;
                     }
-                    index += 2;
+                    index += 4;
                     break;
                 }
+                0b1000 => {
+                    u_32 = unsafe { std::mem::transmute::<f32, [u8; 4]>(block.as_number() as f32) };
+                    let mut j = 0;
+                    let offset = index;
+                    for value in &unsafe { *c_32 } {
+                        output[j + offset] = *value;
+                        j += 1;
+                    }
+                    index += 4;
+                    break;
+                }
+                0b1001 => {
+                    let block = block.as_string();
+                    let byte = if block.len() == 0 {
+                        0
+                    } else {
+                        block.chars().nth(i).unwrap() as u32
+                    };
+                    let idx = index;
+                    index += 1;
+                    output[idx] = byte as u8;
+                    break;
+                }
+                0b1010 => {
+                    let block = block.as_string();
+                    for chara in block.chars() {
+                        let idx = index;
+                        index += 1;
+                        output[idx] = chara as u8;
+                    }
+                    let idx = index;
+                    index += 1;
+                    output[idx] = 0;
+
+                }
+                0b1011 => {
+                    let block = block.as_string();
+                    for chara in block.chars() {
+                        let charCode = chara as u32;
+                        let idx = index;
+                        index += 1;
+                        output[idx] = (charCode & 0xff) as u8;
+
+                        let idx = index;
+                        index += 1;
+                        output[idx] = (charCode >> 8) as u8;
+                    }
+                    let idx = index;
+                    index += 1;
+                    output[idx] = 0;
+
+                    let idx = index;
+                    index += 1;
+                    output[idx] = 0;
+                }
+                _ => break
             }
             break;
         }
     }
-    Vec::new()
+    output
 }
 fn main() {
-    println!("Hello, world!");
+    println!("Hello, world! {:?}", encode(vec![Block::String("Hello".to_owned())]));
 }

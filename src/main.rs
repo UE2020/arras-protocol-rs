@@ -298,5 +298,22 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
     output
 }
 fn main() {
-    println!("Hello, world! {:?}", encode(vec![Block::Bool(true), Block::Bool(true), Block::Bool(true), Block::Bool(true)]));
+    use std::time::{Duration, Instant};
+    // lets bench it
+    let start = Instant::now();
+    for i in 0..1000 {
+        let payload = vec![
+            Block::Bool(true),
+            Block::Bool(true),
+            Block::Bool(true),
+            Block::Bool(true),
+            Block::String("haha arras ezz".to_owned()),
+            Block::Number(0.4),
+            Block::Number(3.14),
+            Block::Number(1.8),
+        ];
+        encode(payload);
+    }
+    let duration = start.elapsed();
+    println!("arras_protocol: 1000 cycles took {:?}", duration);
 }

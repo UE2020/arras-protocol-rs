@@ -1,4 +1,4 @@
 # arras-protocol-rs
-Arras protocol in Rust
+Arras protocol in Rust. The decoder is unfinished.
 
-Mostly incomplete atm.
+Contributions are welcome.

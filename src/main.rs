@@ -1,4 +1,4 @@
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 enum FasttalkType {
     Bool(bool),
     Number(f64),
@@ -116,8 +116,7 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
             }
         } else if block.is_string() {
             let dec = block.as_string();
-            let mut hasUnicode = !dec.chars().all(|c| char::is_ascii(&c));
-            println!("hasUnicode {}", hasUnicode);
+            let hasUnicode = !dec.chars().all(|c| char::is_ascii(&c));
             if !hasUnicode && dec.chars().collect::<Vec<_>>().len() <= 1 {
                 typeCode = 0b1001;
                 contentSize += 1;
@@ -180,10 +179,6 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
         headerCodes.push(0b1111);
     }
     let mut output = Vec::with_capacity((headerCodes.len() >> 1) + contentSize);
-    println!("Output {}", (headerCodes.len() >> 1) + contentSize);
-    println!("Content size {}", contentSize);
-    println!("Header codes {}", headerCodes.len());
-    println!("opcode {}", headerCodes.len() >> 1);
 
     output.resize((headerCodes.len() >> 1) + contentSize, 0);
     // loop
@@ -267,20 +262,16 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
                     let idx = index;
                     index += 1;
                     output[idx] = 0;
-
                 }
                 0b1011 => {
                     let block = block.as_string();
                     for chara in block.encode_utf16() {
                         let charCode = chara;
-                        println!("{}", charCode);
                         let idx = index;
                         index += 1;
-                        println!("{}", (charCode & 0xff));
                         output[idx] = (charCode & 0xff) as u8;
 
                         let idx = index;
-                        println!("{}", (charCode >> 8));
                         index += 1;
                         output[idx] = (charCode >> 8) as u8;
                     }
@@ -292,13 +283,213 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
                     index += 1;
                     output[idx] = 0;
                 }
-                _ => break
+                _ => break,
             }
             break;
         }
     }
     output
 }
+
+fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
+    // SAFETY: These values will only be modified from 1 thread
+    let mut u_32: [u8; 4] = [0; 4];
+    let c_32: *mut [u8; 4] = &mut u_32 as *mut _;
+    let f_32: *mut [u8; 4] = &mut u_32 as *mut _;
+
+    let mut u_16: [u8; 2] = [0; 2];
+    let c_16: *mut [u8; 2] = &mut u_16 as *mut _;
+
+    let data = packet;
+    if data[0] >> 4 != 0b1111 {
+        return None;
+    }
+    
+    let mut headers = Vec::new();
+    let mut lastTypeCode = 0b1111;
+    let mut index = 0;
+    let mut consumedHalf = true;
+    loop {
+        if index >= data.len() {
+            return None
+        }
+        let mut typeCode = data[index];
+
+        if consumedHalf {
+            typeCode &= 0b1111;
+            index += 1;
+        } else {
+            typeCode >>= 4;
+        }
+        consumedHalf = !consumedHalf;
+
+        if (typeCode & 0b1100) == 0b1100 {
+            if typeCode == 0b1111 {
+                if consumedHalf {
+                    index += 1;
+                }
+                break; // TODO: is this sound?
+
+            }
+            let mut repeat = typeCode - 10;
+            if typeCode == 0b1110 {
+                if index >= data.len() {
+                    return None;
+                }
+                let mut repeatCode = data[index];
+
+                if consumedHalf {
+                    repeatCode &= 0b1111;
+                    index += 1;
+                } else {
+                    repeatCode >>= 4;
+                }
+                consumedHalf = !consumedHalf;
+
+                repeat += repeatCode;
+            }
+
+            for i in 0..repeat {
+                headers.push(lastTypeCode);
+            }
+        } else {
+            headers.push(typeCode);
+            lastTypeCode = typeCode;
+        }
+    }
+
+    let mut output: Vec<Block> = Vec::new();
+    for header in headers {
+        match header {
+            0b0000 => output.push(Block::Number(0.)),
+            0b0001 => output.push(Block::Number(1.)),
+            0b0010 => {
+                let idx = index;
+                index += 1;
+                output.push(Block::Number(data[idx] as f64));
+            }
+            0b0011 => {
+                let idx = index;
+                index += 1;
+                output.push(Block::Number(data[idx] as f64 - 0x100 as f64));
+            }
+            0b0100 => {
+                let mut buffer: [u8; 2] = [0, 0];
+
+                let idx = index;
+                index += 1;
+                buffer[0] = data[idx];
+                let idx = index;
+                index += 1;
+                buffer[1] = data[idx];
+
+                output.push(Block::Number(unsafe { std::mem::transmute::<[u8; 2], u16>(buffer) } as f64));
+            }
+            0b0101 => {
+                let mut buffer: [u8; 2] = [0, 0];
+
+                let idx = index;
+                index += 1;
+                buffer[0] = data[idx];
+                let idx = index;
+                index += 1;
+                buffer[1] = data[idx];
+
+                output.push(Block::Number(unsafe { std::mem::transmute::<[u8; 2], u16>(buffer) as u32 - 0x10000 as u32 } as f64));
+            }
+            0b0110 => {
+                let mut buffer: [u8; 4] = [0, 0, 0, 0];
+
+                let idx = index;
+                index += 1;
+                buffer[0] = data[idx];
+                let idx = index;
+                index += 1;
+                buffer[1] = data[idx];
+                let idx = index;
+                index += 1;
+                buffer[2] = data[idx];
+                let idx = index;
+                index += 1;
+                buffer[3] = data[idx];
+
+                output.push(Block::Number(unsafe { std::mem::transmute::<[u8; 4], u32>(buffer) } as f64));
+            }
+            0b0111 => {
+                let mut buffer: [u8; 4] = [0, 0, 0, 0];
+
+                let idx = index;
+                index += 1;
+                buffer[0] = data[idx];
+                let idx = index;
+                index += 1;
+                buffer[1] = data[idx];
+                let idx = index;
+                index += 1;
+                buffer[2] = data[idx];
+                let idx = index;
+                index += 1;
+                buffer[3] = data[idx];
+
+                output.push(Block::Number(unsafe { std::mem::transmute::<[u8; 4], u32>(buffer) as u64 - 0x100000000 as u64 } as f64));
+            }
+            0b1000 => {
+                let mut buffer: [u8; 4] = [0, 0, 0, 0];
+
+                let idx = index;
+                index += 1;
+                buffer[0] = data[idx];
+                let idx = index;
+                index += 1;
+                buffer[1] = data[idx];
+                let idx = index;
+                index += 1;
+                buffer[2] = data[idx];
+                let idx = index;
+                index += 1;
+                buffer[3] = data[idx];
+
+                output.push(Block::Number(unsafe { std::mem::transmute::<[u8; 4], f32>(buffer) } as f64));
+            }
+            0b1001 => {
+                let idx = index;
+                index += 1;
+                let byte = data[idx];
+                if byte == 0 {
+                    output.push(Block::String(String::from("")));
+                } else {
+                    output.push(Block::String(std::char::from_u32(byte as u32).unwrap().to_string()));
+                }
+            }
+            0b1010 => {
+                println!("0b1010");
+                let mut string = String::new();
+                let mut byte = 0;
+                loop {
+                    let idx = index;
+                    index += 1;
+                    byte = data[idx];
+                    if index >= data.len() {
+                        index -= 4;
+                        break;
+                    }
+                    println!("Index {}", index);
+                    string += &std::char::from_u32(byte as u32).unwrap().to_string();
+                }
+                string.truncate(string.len() - (3+1));
+                output.push(Block::String(string));
+            }
+            0b1011 => {
+                println!("0b1011");
+                //let mut string = String::new();
+            }
+            _ => ()
+        }
+    }
+
+    Some(output)
+}
+
 fn main() {
     use std::time::{Duration, Instant};
     // lets bench it
@@ -325,10 +516,13 @@ fn main() {
         Block::Bool(true),
         Block::Bool(true),
         Block::Bool(true),
+        Block::Number(32000.),
         Block::String("𝓱𝓪𝓱𝓪 𝓮𝔃𝔃".to_owned()),
         Block::Number(0.4),
         Block::Number(3.14),
         Block::Number(1.8),
     ];
     println!("arras_protocol-test1: {:?}", encode(payload));
+    println!("Dec {:?}", decode(vec![250, 29, 111, 98, 114, 117, 104, 32, 97, 115, 112, 101, 99, 116, 0, 44, 15, 1, 0]));
+    println!("Esc {}", "bruh aspect\u{0},\u{f}\u{1}");
 }

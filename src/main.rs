@@ -1,3 +1,5 @@
+#![allow(overflowing_literals)]
+
 #[derive(PartialEq, Clone, Debug)]
 enum FasttalkType {
     Bool(bool),
@@ -383,7 +385,7 @@ fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
                 index += 1;
                 buffer[1] = data[idx];
 
-                output.push(Block::Number(unsafe { std::mem::transmute::<[u8; 2], u16>(buffer) } as f64));
+                output.push(Block::Number(i16::from_le_bytes(buffer) as f64));
             }
             0b0101 => {
                 let mut buffer: [u8; 2] = [0, 0];
@@ -395,7 +397,9 @@ fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
                 index += 1;
                 buffer[1] = data[idx];
 
-                output.push(Block::Number(unsafe { std::mem::transmute::<[u8; 2], u16>(buffer) as u32 - 0x10000 as u32 } as f64));
+                println!("From by {}", i16::from_le_bytes(buffer) - 0x10000);
+
+                output.push(Block::Number((i16::from_le_bytes(buffer) - 0x10000) as f64));
             }
             0b0110 => {
                 let mut buffer: [u8; 4] = [0, 0, 0, 0];
@@ -413,7 +417,10 @@ fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
                 index += 1;
                 buffer[3] = data[idx];
 
-                output.push(Block::Number(unsafe { std::mem::transmute::<[u8; 4], u32>(buffer) } as f64));
+                println!("From by {}", i32::from_le_bytes(buffer));
+
+
+                output.push(Block::Number(i32::from_le_bytes(buffer) as f64));
             }
             0b0111 => {
                 let mut buffer: [u8; 4] = [0, 0, 0, 0];
@@ -431,7 +438,7 @@ fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
                 index += 1;
                 buffer[3] = data[idx];
 
-                output.push(Block::Number(unsafe { std::mem::transmute::<[u8; 4], u32>(buffer) as u64 - 0x100000000 as u64 } as f64));
+                output.push(Block::Number(unsafe { std::mem::transmute::<[u8; 4], i32>(buffer) as f64 - 0x100000000 as i64 as f64 }));
             }
             0b1000 => {
                 let mut buffer: [u8; 4] = [0, 0, 0, 0];
@@ -449,7 +456,7 @@ fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
                 index += 1;
                 buffer[3] = data[idx];
 
-                output.push(Block::Number(unsafe { std::mem::transmute::<[u8; 4], f32>(buffer) } as f64));
+                output.push(Block::Number(f32::from_le_bytes(buffer) as f64));
             }
             0b1001 => {
                 let idx = index;
@@ -473,10 +480,16 @@ fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
                         index -= 4;
                         break;
                     }
-                    println!("Index {}", index);
-                    string += &std::char::from_u32(byte as u32).unwrap().to_string();
+                    let chara = match std::char::from_u32(byte as u32) {
+                        Some(c) => c,
+                        None => continue
+                    };
+                    if chara == '\u{0}' {
+                        break
+                    }
+                    string += &chara.to_string();
                 }
-                string.truncate(string.len() - (3+1));
+                //string.truncate(string.len());
                 output.push(Block::String(string));
             }
             0b1011 => {
@@ -523,6 +536,5 @@ fn main() {
         Block::Number(1.8),
     ];
     println!("arras_protocol-test1: {:?}", encode(payload));
-    println!("Dec {:?}", decode(vec![250, 29, 111, 98, 114, 117, 104, 32, 97, 115, 112, 101, 99, 116, 0, 44, 15, 1, 0]));
-    println!("Esc {}", "bruh aspect\u{0},\u{f}\u{1}");
+    println!("Dec {:?}", decode(vec![249, 8, 192, 195, 52, 37, 83, 66, 85, 36, 37, 82, 66, 85, 36, 37, 83, 66, 85, 38, 37, 82, 63, 117, 102, 96, 46, 197, 158, 33, 9, 197, 160, 129, 88, 68, 255, 255, 246, 9, 3, 123, 108, 212, 125, 187, 181, 20, 3, 149, 104, 182, 139, 51, 137, 87, 3, 182, 50, 196, 134, 247, 39, 133, 3, 41, 48, 20, 136, 6, 89, 164, 3, 39, 63, 156, 139, 215, 235, 187, 3, 248, 88, 211, 137, 91, 39, 36, 1, 0, 3, 85, 69, 232, 136, 17, 255]));
 }

@@ -438,7 +438,7 @@ fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
                 index += 1;
                 buffer[3] = data[idx];
 
-                output.push(Block::Number(unsafe { std::mem::transmute::<[u8; 4], i32>(buffer) as f64 - 0x100000000 as i64 as f64 }));
+                output.push(Block::Number((i32::from_le_bytes(buffer) - 0x100000000) as f64));
             }
             0b1000 => {
                 let mut buffer: [u8; 4] = [0, 0, 0, 0];

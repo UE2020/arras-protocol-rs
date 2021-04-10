@@ -1,14 +1,15 @@
 #![allow(overflowing_literals)]
-
+use web_sys::*;
+use wasm_bindgen::JsValue;
 #[derive(PartialEq, Clone, Debug)]
-enum FasttalkType {
+pub enum FasttalkType {
     Bool(bool),
     Number(f64),
     String(String),
 }
 
 impl FasttalkType {
-    fn compare(blocka: &Self, blockb: &Self) -> bool {
+    pub fn compare(blocka: &Self, blockb: &Self) -> bool {
         if std::mem::discriminant(blocka) != std::mem::discriminant(blockb) {
             false
         } else {
@@ -31,14 +32,14 @@ impl FasttalkType {
         }
     }
 
-    fn is_number(&self) -> bool {
+    pub fn is_number(&self) -> bool {
         match self {
             Self::Number(_) => true,
             _ => false,
         }
     }
 
-    fn as_number(&self) -> f64 {
+    pub fn as_number(&self) -> f64 {
         match self {
             Self::Number(v) => *v,
             Self::Bool(v) => *v as u8 as f64,
@@ -46,14 +47,14 @@ impl FasttalkType {
         }
     }
 
-    fn is_string(&self) -> bool {
+    pub fn is_string(&self) -> bool {
         match self {
             Self::String(_) => true,
             _ => false,
         }
     }
 
-    fn as_string(&self) -> String {
+    pub fn as_string(&self) -> String {
         match self {
             Self::String(v) => v.clone(),
             _ => panic!("Invalid cast"),
@@ -61,17 +62,9 @@ impl FasttalkType {
     }
 }
 
-type Block = FasttalkType;
+pub type Block = FasttalkType;
 
-fn encode(message: Vec<Block>) -> Vec<u8> {
-    // SAFETY: These values will only be modified from 1 thread
-    let mut u_32: [u8; 4] = [0; 4];
-    let c_32: *mut [u8; 4] = &mut u_32 as *mut _;
-    let f_32: *mut [u8; 4] = &mut u_32 as *mut _;
-
-    let mut u_16: [u8; 2] = [0; 2];
-    let c_16: *mut [u8; 2] = &mut u_16 as *mut _;
-
+pub fn encode(message: Vec<Block>) -> Vec<u8> {
     let mut headers = vec![];
     let mut headerCodes = vec![];
     let mut contentSize = 0;
@@ -144,7 +137,7 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
                     repeatTypeCount -= 19;
                 }
                 if repeatTypeCount == 1 {
-                    headerCodes.push(0b1100);
+                    headerCodes.push(lastTypeCode);
                 } else if repeatTypeCount == 2 {
                     headerCodes.push(0b1100);
                 } else if repeatTypeCount == 3 {
@@ -210,10 +203,10 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
                     break;
                 }
                 0b0100 | 0b0101 => {
-                    u_16 = unsafe { std::mem::transmute::<u16, [u8; 2]>(block.as_number() as u16) };
+                    let u_16 = (block.as_number() as u16).to_le_bytes();
                     let mut j = 0;
                     let offset = index;
-                    for value in &unsafe { *c_16 } {
+                    for value in u_16.iter() {
                         output[j + offset] = *value;
                         j += 1;
                     }
@@ -221,10 +214,10 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
                     break;
                 }
                 0b0110 | 0b0111 => {
-                    u_32 = unsafe { std::mem::transmute::<u32, [u8; 4]>(block.as_number() as u32) };
+                    let u_32 = (block.as_number() as u32).to_le_bytes();
                     let mut j = 0;
                     let offset = index;
-                    for value in &unsafe { *c_32 } {
+                    for value in u_32.iter() {
                         output[j + offset] = *value;
                         j += 1;
                     }
@@ -232,10 +225,10 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
                     break;
                 }
                 0b1000 => {
-                    u_32 = unsafe { std::mem::transmute::<f32, [u8; 4]>(block.as_number() as f32) };
+                    let u_32 = (block.as_number() as f32).to_le_bytes();
                     let mut j = 0;
                     let offset = index;
-                    for value in &unsafe { *c_32 } {
+                    for value in u_32.iter() {
                         output[j + offset] = *value;
                         j += 1;
                     }
@@ -293,15 +286,7 @@ fn encode(message: Vec<Block>) -> Vec<u8> {
     output
 }
 
-fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
-    // SAFETY: These values will only be modified from 1 thread
-    let mut u_32: [u8; 4] = [0; 4];
-    let c_32: *mut [u8; 4] = &mut u_32 as *mut _;
-    let f_32: *mut [u8; 4] = &mut u_32 as *mut _;
-
-    let mut u_16: [u8; 2] = [0; 2];
-    let c_16: *mut [u8; 2] = &mut u_16 as *mut _;
-
+pub fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
     let data = packet;
     if data[0] >> 4 != 0b1111 {
         return None;
@@ -397,8 +382,6 @@ fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
                 index += 1;
                 buffer[1] = data[idx];
 
-                println!("From by {}", i16::from_le_bytes(buffer) - 0x10000);
-
                 output.push(Block::Number((i16::from_le_bytes(buffer) - 0x10000) as f64));
             }
             0b0110 => {
@@ -416,9 +399,6 @@ fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
                 let idx = index;
                 index += 1;
                 buffer[3] = data[idx];
-
-                println!("From by {}", i32::from_le_bytes(buffer));
-
 
                 output.push(Block::Number(i32::from_le_bytes(buffer) as f64));
             }
@@ -469,7 +449,6 @@ fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
                 }
             }
             0b1010 => {
-                println!("0b1010");
                 let mut string = String::new();
                 let mut byte = 0;
                 loop {
@@ -493,7 +472,6 @@ fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
                 output.push(Block::String(string));
             }
             0b1011 => {
-                println!("0b1011");
                 let mut buffer = Vec::new();
                 loop {
                     let idx = index;
@@ -519,7 +497,7 @@ fn decode(packet: Vec<u8>) -> Option<Vec<Block>> {
     Some(output)
 }
 
-fn main() {
+/*fn main() {
     use std::time::{Duration, Instant};
     // lets bench it
     let start = Instant::now();
@@ -553,4 +531,29 @@ fn main() {
     ];
     println!("arras_protocol-test1: {:?}", encode(payload));
     println!("Dec {:?}", decode(vec![251,30,24,187,255,53,216,200,220,53,216,92,220,53,216,194,220,53,216,82,220,32,0,53,216,202,220,53,216,201,220,53,216,187,220,53,216,234,223,0,0,205,204,204,61,61,216,31,220,57,38,32,0,32,0,53,216,200,220,53,216,44,221,220,36,53,216,212,220,32,0,76,20,84,255,146,1,24,255,32,0,32,0,61,216,50,222,97,38,0,0,53,216,100,221,53,216,96,221,53,216,94,221,53,216,86,221,32,0,53,216,102,221,53,216,101,221,53,216,87,221,53,216,224,223,0,0]));
+
+    let start = Instant::now();
+    for i in 0..1000 {
+        let payload = vec![251,30,24,187,255,53,216,200,220,53,216,92,220,53,216,194,220,53,216,82,220,32,0,53,216,202,220,53,216,201,220,53,216,187,220,53,216,234,223,0,0,205,204,204,61,61,216,31,220,57,38,32,0,32,0,53,216,200,220,53,216,44,221,220,36,53,216,212,220,32,0,76,20,84,255,146,1,24,255,32,0,32,0,61,216,50,222,97,38,0,0,53,216,100,221,53,216,96,221,53,216,94,221,53,216,86,221,32,0,53,216,102,221,53,216,101,221,53,216,87,221,53,216,224,223,0,0];
+        decode(payload);
+    }
+    let duration = start.elapsed();
+    println!("arras_protocol: 1000 decode cycles took {:?}", duration);
+
+    // twoway
+    let e = encode(vec![
+        Block::Bool(true),
+        Block::Bool(true),
+        Block::Bool(true),
+        Block::Bool(true),
+        Block::Number(32000.),
+        Block::String("𝓱𝓪𝓱𝓪 𝓮𝔃𝔃".to_owned()),
+        Block::Number(0.4),
+        Block::Number(3.14),
+        Block::Number(1.8),
+    ]);
+    let d = decode(e.clone());
+    println!("Encoded {:?}", e);
+    println!("Decoded {:?}", d);
 }
+*/

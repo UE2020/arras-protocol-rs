@@ -1,0 +1,9 @@
+<html>
+    <script type="module">
+  import { default as init, greet, encode } from './pkg/arras_protocol.js';
+  await init("./pkg/arras_protocol_bg.wasm");
+  greet("Hello");
+  window.encode = encode;
+  console.log(encode([0,1,2]));
+    </script>
+</html>
